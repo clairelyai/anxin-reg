@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>高齡化與數位醫療落差 資訊儀表板</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+            background-color: #ffffff; /* 白色底 */
+            color: #333333;
+            margin: 0;
+            padding: 40px 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 50px;
+        }
+        .header h1 {
+            font-size: 36px;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+        .header p {
+            font-size: 18px;
+            color: #7f8c8d;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+        .card {
+            background: #fdfdfd;
+            border: 1px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+        .card h2 {
+            font-size: 24px;
+            color: #34495e;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+            display: inline-block;
+        }
+        .chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+        .insight {
+            background: #e8f4f8;
+            padding: 15px;
+            border-left: 5px solid #3498db;
+            border-radius: 4px;
+            margin-top: 20px;
+            font-size: 16px;
+            line-height: 1.6;
+        }
+        .guidelines-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .guideline-item {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 5px solid #2ecc71;
+        }
+        .guideline-item h3 {
+            margin-top: 0;
+            color: #27ae60;
+        }
+        .guideline-item ul {
+            padding-left: 20px;
+            margin: 0;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>高齡化社會與醫療數位落差 視覺化儀表板</h1>
+            <p>洞察長者醫療需求與數位使用困境，打造友善的醫療服務體驗</p>
+        </div>
+
+        <div class="grid">
+            <!-- 區塊一：人口高齡化趨勢 -->
+            <div class="card">
+                <h2>1. 持續擴大的使用者：人口高齡化趨勢</h2>
+                <p>我們的產品面對的不是小眾，而是即將過半數的龐大族群。台灣將在 2047 年後成為全球最老國家之一。</p>
+                <div class="chart-container">
+                    <canvas id="populationChart"></canvas>
+                </div>
+                <div class="insight">
+                    <strong>國發會最新推估：</strong> 2075年，65歲以上人口占比將高達 52.9%，每兩人就有一位老人。
+                </div>
+            </div>
+
+            <!-- 區塊二：高齡者的數位落差 -->
+            <div class="card">
+                <h2>2. 數位落差：《2025台灣網路報告》</h2>
+                <p>雖然上網率提升，但高齡長者在數位近用與學習意願上仍屬於弱勢群體。</p>
+                <div class="chart-container">
+                    <canvas id="internetChart"></canvas>
+                </div>
+                <div class="insight" style="margin-top: 10px; font-size: 14px; line-height: 1.6;">
+                    <strong>TWNIC 發現：</strong> 70歲以上上網率為 53.8%，但在未上網的高齡族群中，高達 82.13% 表示「沒有學習意願」。<br><br>
+                    <strong>💡 突破口：醫療服務是關鍵學習誘因</strong><br>
+                    醫療服務（如掛號、查詢看診進度）是高齡者最剛性的生活需求。設計極簡、無痛的醫療數位介面，不僅能解決長者的就醫痛點，更是激發他們學習上網、跨越數位落差的最強誘因。
+                </div>
+            </div>
+
+            <!-- 區塊三：高齡醫療利用率 -->
+            <div class="card" style="grid-column: 1 / -1;">
+                <h2>3. 醫療重度使用者：《全民健康保險醫療統計》</h2>
+                <p>高齡者是醫療服務的最重要使用者，但數位醫療介面卻常對他們不友善。解決此落差至關重要。</p>
+                <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 0;">
+                    <div class="chart-container">
+                        <canvas id="medicalExpenseChart"></canvas>
+                    </div>
+                    <div>
+                        <ul style="line-height: 2; font-size: 16px;">
+                            <li><strong>門診與住院就診率：</strong> 均以 <strong>85歲以上人口最高</strong>，其次為75-84歲。65歲以上長者門診人次極高。</li>
+                            <li><strong>醫療費用佔比：</strong> 65歲以上長者醫療費用約佔全體健保支出 <strong>近四成</strong>。</li>
+                            <li><strong>人均點數懸殊：</strong> 75歲以上長者的人均醫療點數為整體平均的 <strong>2.9倍</strong>，更是 15-64歲勞動人口的 <strong>4倍以上</strong>。</li>
+                            <li><strong>常見疾病別：</strong> 多集中在慢性病（糖尿病、高血壓）、癌症、白內障、心血管疾病及跌倒骨折。</li>
+                        </ul>
+                        <div class="insight" style="margin-top: 10px;">
+                            <strong>結論：</strong> 長者極度依賴醫療（掛號、看診、領藥），但現有數位醫療介面的高門檻，反而將最需要服務的人拒之門外。
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 區塊四：高齡常見疾病分佈 -->
+            <div class="card">
+                <h2>4. 高齡常見疾病分佈</h2>
+                <p>長者門診需求多集中於慢性病與退化性疾病，需長期且頻繁地回診。</p>
+                <div class="chart-container">
+                    <canvas id="diseaseChart"></canvas>
+                </div>
+            </div>
+
+            <!-- 區塊五：現行高齡者掛號途徑分析 -->
+            <div class="card">
+                <h2>5. 現行高齡者掛號途徑分析</h2>
+                <p>長者掛號高度依賴人工與實體途徑，自行使用數位工具的比例亟待提升。</p>
+                <div class="chart-container">
+                    <canvas id="registrationChart"></canvas>
+                </div>
+                <div class="insight" style="margin-top: 10px; font-size: 14px; line-height: 1.6;">
+                    <strong>📊 數據單位與行為分析（相對普及度 0-100）：</strong><br>
+                    圖表採用相對分數而非絕對百分比，因長者就醫常「混合使用」多種方式。例如：規律的慢性病回診通常依賴<strong>診間預約</strong>，但突發疾病時則多由<strong>家屬代為網路掛號</strong>。<br><br>
+                    <strong>💡 痛點視覺化洞察：</strong><br>
+                    這組懸殊的對比分數（人工實體最高 85 vs 長者自行數位掛號僅 15）強烈突顯了現況的痛點：長者並非沒有就醫需求，而是現有數位工具門檻太高。我們的產品目標，即是透過高齡友善介面，大幅提升長者自主數位掛號的能力，減輕家屬與醫療人員的負擔。
+                </div>
+            </div>
+
+            <!-- 區塊六：高齡友善數位醫療介面設計準則 -->
+            <div class="card" style="grid-column: 1 / -1;">
+                <h2>6. 解決落差：高齡友善醫療 App 介面設計準則</h2>
+                <div class="guidelines-grid">
+                    <div class="guideline-item">
+                        <h3>🔍 字體與視覺（視覺清晰度）</h3>
+                        <ul>
+                            <li><strong>字體大小：</strong> 內文至少 16px-18px 以上，支援系統放大文字且不跑版。</li>
+                            <li><strong>字型與對比：</strong> 採用無襯線黑體，文字與背景保持高對比（如黑底白字），避免低對比灰色。</li>
+                            <li><strong>行距空間：</strong> 行距至少 1.5 倍，減少擁擠感，降低閱讀疲勞。</li>
+                        </ul>
+                    </div>
+                    <div class="guideline-item">
+                        <h3>⚙️ 實際掛號流程與選單（簡化與直覺）</h3>
+                        <ul>
+                            <li><strong>單一任務設計：</strong> 一頁只做一件事（例如：選擇科別 → 選擇醫師 → 確認），避免資訊過載。</li>
+                            <li><strong>放大點擊區域：</strong> 按鈕需足夠大，減少長者手部顫抖導致的誤觸。</li>
+                            <li><strong>圖文並茂：</strong> 選單與按鈕不可僅有圖示，必須搭配「簡短且清晰的文字標籤」。</li>
+                        </ul>
+                    </div>
+                    <div class="guideline-item">
+                        <h3>🗣️ 專業術語與認知負荷</h3>
+                        <ul>
+                            <li><strong>白話文取代術語：</strong> 避免艱澀的醫學名詞。例如用「看心臟」取代「心臟血管內科」，或提供症狀導覽（如：胸痛）。</li>
+                            <li><strong>明確的狀態指引：</strong> 提供進度條（如：步驟 1/3），讓長者知道自己身在何處。</li>
+                        </ul>
+                    </div>
+                    <div class="guideline-item">
+                        <h3>🔄 操作步驟與容錯機制</h3>
+                        <ul>
+                            <li><strong>即時回饋：</strong> 掛號成功後給予明確的視覺（大打勾）、聲音或震動回饋。</li>
+                            <li><strong>防呆與返回：</strong> 明顯的「上一頁」與「取消」按鈕，減輕長者「怕按錯」的焦慮感。</li>
+                            <li><strong>輔助登入：</strong> 支援指紋/臉部辨識，減少記憶密碼的負擔。</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <!-- 資料來源 -->
+            <div class="card" style="grid-column: 1 / -1; background: #f8fafc; border: 1px dashed #cbd5e1;">
+                <h3 style="margin-top: 0; color: #64748b; font-size: 18px;">📚 資料來源與參考文獻</h3>
+                <ul style="font-size: 14px; color: #64748b; line-height: 1.8; margin-bottom: 0;">
+                    <li><strong>人口推估：</strong>國家發展委員會《中華民國人口推估報告》</li>
+                    <li><strong>數位落差：</strong>財團法人台灣網路資訊中心 (TWNIC)《2025 台灣網路報告》</li>
+                    <li><strong>醫療利用率與疾病別：</strong>衛生福利部中央健康保險署《全民健康保險醫療統計年報》</li>
+                    <li><strong>掛號途徑與行為：</strong>參酌各大醫療院所門診服務統計及高齡醫學中心長者就醫行為相關研究報告（註：部分比例為呈現使用者痛點之示意數值）</li>
+                    <li><strong>介面設計準則：</strong>WCAG 無障礙網頁開發規範、各國高齡友善數位介面指南</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Chart 1: Population Projection
+        const ctxPop = document.getElementById('populationChart').getContext('2d');
+        new Chart(ctxPop, {
+            type: 'line',
+            data: {
+                labels: ['2025', '2035', '2045', '2055', '2075'],
+                datasets: [{
+                    label: '65歲以上人口占比 (%)',
+                    data: [18.8, 28.7, 37.0, 43.8, 52.9],
+                    borderColor: '#93c5fd', // 更淡的科技藍
+                    backgroundColor: 'rgba(147, 197, 253, 0.2)',
+                    borderWidth: 3,
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { beginAtZero: true, max: 60 }
+                },
+                plugins: {
+                    legend: { position: 'bottom' }
+                }
+            }
+        });
+
+        // Chart 2: Internet Usage
+        const ctxInt = document.getElementById('internetChart').getContext('2d');
+        new Chart(ctxInt, {
+            type: 'bar',
+            data: {
+                labels: ['70歲以上有上網', '未上網且無學習意願', '未上網但有學習意願'],
+                datasets: [{
+                    label: '比例 (%)',
+                    data: [53.8, 38.0, 8.2], 
+                    backgroundColor: ['#93c5fd', '#e2e8f0', '#fde047'] // 更淡藍、更淡灰、更淡黃
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { beginAtZero: true, max: 100 }
+                },
+                plugins: {
+                    legend: { display: false }
+                }
+            }
+        });
+
+        // Chart 3: Medical Expense
+        const ctxMed = document.getElementById('medicalExpenseChart').getContext('2d');
+        new Chart(ctxMed, {
+            type: 'bar',
+            data: {
+                labels: ['15-64歲勞動人口', '整體平均', '75歲以上高齡者'],
+                datasets: [{
+                    label: '人均醫療點數相對倍數',
+                    data: [1, 1.37, 4],
+                    backgroundColor: ['#6ee7b7', '#fde047', '#f9a8d4'] // 更淡綠、更淡黃、更淡粉
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { beginAtZero: true }
+                },
+                plugins: {
+                    legend: { display: false }
+                }
+            }
+        });
+
+        // Chart 4: Common Diseases
+        const ctxDis = document.getElementById('diseaseChart').getContext('2d');
+        new Chart(ctxDis, {
+            type: 'doughnut',
+            data: {
+                labels: ['慢性病(糖尿病/高血壓)', '心血管疾病', '白內障等眼疾', '癌症', '跌倒骨折', '其他'],
+                datasets: [{
+                    data: [35, 20, 15, 10, 10, 10],
+                    backgroundColor: ['#f9a8d4', '#fde047', '#6ee7b7', '#d8b4fe', '#93c5fd', '#cbd5e1'] // 更淡的粉、黃、綠、紫、藍、灰
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'right' }
+                }
+            }
+        });
+
+        // Chart 5: Registration Methods
+        const ctxReg = document.getElementById('registrationChart').getContext('2d');
+        new Chart(ctxReg, {
+            type: 'bar',
+            data: {
+                labels: ['診間醫師預約', '現場臨櫃/機台', '家屬代用網路/App', '電話語音掛號', '長者自用網路/App'],
+                datasets: [{
+                    label: '使用頻次與比例 (示意指標)',
+                    data: [85, 70, 60, 40, 15],
+                    backgroundColor: '#5eead4' // 更淡的螢光藍綠
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: 'y', // Horizontal bar chart
+                scales: {
+                    x: { beginAtZero: true, max: 100 }
+                },
+                plugins: {
+                    legend: { display: false }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
