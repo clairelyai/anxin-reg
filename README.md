@@ -77,7 +77,7 @@ https://line.me/R/share?text=...
 - `app/api/intent/route.ts`：LLM 意圖解析與本機備援
 - `app/api/cgmh/route.ts`：長庚公開資料層
 - `app/globals.css`：既有介面樣式
-- `.openai/hosting.json`：目前 Sites 專案識別與儲存綁定
+- `.openai/hosting.json`：Sites 部署與儲存綁定；首次部署時會寫入自己的 `project_id`
 
 ## 安全邊界
 
