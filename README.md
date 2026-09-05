@@ -4,6 +4,7 @@
 > **參賽賽道：** AI for Everyday Life
 > 
 > **參賽隊伍：** Woooooo It’s AI
+<img width="650" height="445" alt="螢幕擷取畫面 2026-09-06 000950" src="https://github.com/user-attachments/assets/2954aa6c-4693-4429-b553-6a17c628a7b5" />
 
 
 ## 問題與解法摘要 (Elevator Pitch)
