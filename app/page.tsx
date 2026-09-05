@@ -3,10 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type Intent = { intent: "register"; department: string; date: string };
-type Slot = { value: string; date: string; displayDate: string; weekday: string; period: string; doctor: string; time: string; remaining?: number };
+type Slot = { value: string; date: string; displayDate: string; weekday: string; period: string; doctor: string; time: string; status?: string; checkinUrl?: string };
 type CgmhData = { hospital: string; department: string; slots: Slot[]; sourceUrl: string; sourceMode: "live" | "demo"; sourceReachable?: boolean };
 
-const SITE_URL = "https://anxin-registration-demo.modest-loon-8360.chatgpt.site";
+const SITE_URL = "https://site-creator-vinext-starter.anxin-reg.workers.dev";
 const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
 function nextWeekday(target: number, extraWeeks = 0) {
@@ -21,13 +21,13 @@ function fallbackData(): CgmhData {
   const fri = nextWeekday(5);
   const display = (d: Date) => `${d.getMonth() + 1} 月 ${d.getDate()} 日`;
   return {
-    hospital: "林口長庚紀念醫院",
+    hospital: "台北長庚紀念醫院",
     department: "眼科",
     sourceUrl: "https://register.cgmh.org.tw/",
     sourceMode: "demo",
     slots: [
-      { value: "wed-pm", date: wed.toISOString().slice(0, 10), displayDate: display(wed), weekday: "禮拜三", period: "下午", doctor: "示範醫師 A", time: "下午 2:00", remaining: 3 },
-      { value: "fri-am", date: fri.toISOString().slice(0, 10), displayDate: display(fri), weekday: "禮拜五", period: "早上", doctor: "示範醫師 B", time: "上午 9:30", remaining: 8 },
+      { value: "wed-pm", date: wed.toISOString().slice(0, 10), displayDate: display(wed), weekday: "禮拜三", period: "下午", doctor: "示範醫師 A", time: "下午 2:00", status: "示範資料" },
+      { value: "fri-am", date: fri.toISOString().slice(0, 10), displayDate: display(fri), weekday: "禮拜五", period: "早上", doctor: "示範醫師 B", time: "上午 9:30", status: "示範資料" },
     ],
   };
 }
@@ -49,6 +49,9 @@ export default function Home() {
   const [selected, setSelected] = useState(0);
   const [letter, setLetter] = useState("");
   const [digits, setDigits] = useState("");
+  const [notifyStatus, setNotifyStatus] = useState("");
+  const [notifySent, setNotifySent] = useState(false);
+  const [copyStatus, setCopyStatus] = useState("");
   const recorder = useRef<MediaRecorder | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const chunks = useRef<Blob[]>([]);
@@ -72,10 +75,42 @@ export default function Home() {
     "家人的掛號資料已準備好",
     data.hospital,
     `${intent.department}｜${slot?.doctor || "待選醫師"}`,
-    `${dateText} ${slot?.time || ""}`.trim(),
+    dateText,
     `查看掛號資訊：${SITE_URL}`,
+    ...(slot?.checkinUrl ? [`前往長庚確認掛號：${slot.checkinUrl}`] : []),
     "（示範流程，尚未送出真實掛號）",
   ].join("\n")), [data.hospital, dateText, intent.department, slot]);
+
+  // Copies the ID number to the device's own clipboard only when the user taps
+  // this button — it never travels through a URL, LINE message, or our
+  // backend. Purely a convenience so whoever fills in the real CGMH page
+  // doesn't have to retype it there; it changes nothing about what we submit
+  // or store (still nothing).
+  const copyId = async () => {
+    try {
+      await navigator.clipboard.writeText(idNumber);
+      setCopyStatus("已複製到剪貼簿，可以直接貼到長庚頁面");
+    } catch {
+      setCopyStatus("複製失敗，請回上一步查看您輸入的號碼");
+    }
+  };
+
+  const notifyFamily = async () => {
+    setNotifyStatus("正在通知家人…");
+    try {
+      const response = await fetch("/api/line/notify", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: decodeURIComponent(shareText) }),
+      });
+      if (!response.ok) throw new Error("notify_failed");
+      setNotifySent(true);
+      setNotifyStatus("已自動通知家人的 LINE ✓");
+    } catch {
+      setNotifySent(false);
+      setNotifyStatus("尚未設定自動通知，請用下方按鈕手動分享");
+    }
+  };
 
   const advance = (next = index + 1, delay = 550) => {
     setBusy(true);
@@ -156,7 +191,7 @@ export default function Home() {
   const subtitle = index === 0 ? "按住下面的麥克風，說出想看的科別與日期。" : index === 1 ? `「${transcript || "我要掛下禮拜三的眼科"}」` : index === 2 ? `${intent.department} · ${data.hospital}` : index === 3 ? dateText : index === 4 ? `${slot?.doctor} · ${dateText}` : "最後一步請家人幫您確認，或自行前往長庚網站。";
 
   return <main>
-    <header className="topbar"><div className="brand"><span className="brandMark">安</span><span>安心掛號</span></div><span className="demoPill">完整 Demo</span></header>
+    <header className="topbar"><div className="brand"><span className="brandMark" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none"><path d="M12 20.6s-7.6-4.6-10.2-9.2C.4 8.8 1.6 5.4 4.6 4.3c2.2-.8 4.5 0 5.9 1.8L12 8l1.5-1.9c1.4-1.8 3.7-2.6 5.9-1.8 3 1.1 4.2 4.5 2.8 7.1C21.6 16 12 20.6 12 20.6z" fill="currentColor"/><path d="M9 12h1.4l.9-1.6 1.4 3 .9-1.4H15" stroke="#fff" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg></span><span>安心掛號</span></div><span className="demoPill">完整 Demo</span></header>
     <section className="shell" aria-live="polite">
       <div className="progressText">{index === 5 ? "資料已整理" : `第 ${index + 1} 步，共 5 步`}</div>
       <div className="progress" aria-hidden="true">{[0,1,2,3,4].map((n) => <span key={n} className={n < Math.min(index + 1, 5) ? "done" : ""} />)}</div>
@@ -173,16 +208,16 @@ export default function Home() {
 
         {index === 1 && <><div className="intentCard"><div><span>要做什麼</span><strong>掛號</strong></div><div><span>科別</span><strong>{intent.department}</strong></div><div><span>日期</span><strong>下禮拜三</strong></div></div><div className="choices"><button className="choice recommended" onClick={() => advance()}><span><strong>對，就是這樣</strong><small>查詢長庚公開掛號資訊</small></span></button><button className="choice" onClick={() => setIndex(0)}><span><strong>不對，我再說一次</strong></span></button></div></>}
 
-        {index === 2 && <><div className="sourceLine"><span className={data.sourceReachable ? "liveDot" : "demoDot"} />{data.sourceReachable ? "長庚公開科別已確認 · 時段為示範" : "長庚公開資料層 · 穩定示範資料"}<a href={data.sourceUrl} target="_blank" rel="noreferrer">查看來源</a></div><div className="choices">{data.slots.map((item, n) => <button key={item.value} className={n === selected ? "choice recommended" : "choice"} onClick={() => { setSelected(n); advance(); }}><span><strong>{item.weekday}　{item.period}</strong><small>{item.displayDate}</small></span>{item.remaining != null && <em>示範餘額 {item.remaining}</em>}</button>)}</div></>}
+        {index === 2 && <><div className="sourceLine"><span className={data.sourceMode === "live" ? "liveDot" : "demoDot"} />{data.sourceMode === "live" ? `${data.hospital} · 眼科即時公開班表（僅供參考）` : "長庚公開資料層 · 抓取失敗，顯示示範資料"}<a href={data.sourceUrl} target="_blank" rel="noreferrer">查看來源</a></div><div className="choices">{data.slots.map((item, n) => <button key={item.value} className={n === selected ? "choice recommended" : "choice"} onClick={() => { setSelected(n); advance(); }}><span><strong>{item.weekday}　{item.period}</strong><small>{item.displayDate}</small></span>{item.status && <em>{item.status}</em>}</button>)}</div></>}
 
-        {index === 3 && <><div className="note">只讀取公開時段；不登入、不填病患資料，也不送出掛號。</div><div className="choices"><button className="choice recommended" onClick={() => advance()}><span><strong>{slot?.doctor}</strong><small>{slot?.time} 開始</small></span>{slot?.remaining != null && <em>還有 {slot.remaining} 個號</em>}</button><button className="choice" onClick={() => setIndex(2)}><span><strong>換別的時間</strong></span></button></div></>}
+        {index === 3 && <><div className="note">只讀取公開時段；不登入、不填病患資料，也不送出掛號。</div><div className="choices"><button className="choice recommended" onClick={() => advance()}><span><strong>{slot?.doctor}</strong><small>{slot?.time} 開始</small></span>{slot?.status && <em>{slot.status}</em>}</button><button className="choice" onClick={() => setIndex(2)}><span><strong>換別的時間</strong></span></button></div></>}
 
         {index === 4 && <div className="idBlock"><div className="idDisplay">{masked || "請選字母並輸入數字"}</div><p>1 個英文字母 + 9 個數字</p><p className="privacy">這組號碼只留在您的裝置上，不會上傳。</p><label className="letterLabel">第一碼英文字母<select value={letter} onChange={(e) => setLetter(e.target.value)}><option value="">請選擇</option>{letters.map((item) => <option key={item}>{item}</option>)}</select></label><div className="keypad">{["1","2","3","4","5","6","7","8","9","0","刪除"].map((key) => <button key={key} onClick={() => setDigits((value) => key === "刪除" ? value.slice(0,-1) : `${value}${key}`.slice(0,9))}>{key}</button>)}</div><button className="primary" disabled={!validId} onClick={() => advance()}>好了，下一步</button></div>}
 
-        {index === 5 && <><dl className="recap"><div><dt>醫院</dt><dd>{data.hospital}</dd></div><div><dt>科別</dt><dd>{intent.department}</dd></div><div><dt>醫生</dt><dd>{slot?.doctor}</dd></div><div><dt>時間</dt><dd>{dateText} {slot?.time}</dd></div></dl><div className="finalActions"><a className="lineButton" href={`https://line.me/R/share?text=${shareText}`} target="_blank" rel="noreferrer">傳給家人 LINE</a><a className="officialButton" href={data.sourceUrl} target="_blank" rel="noreferrer">前往長庚確認掛號</a></div><p className="safety">本頁沒有送出掛號；最後確認請由本人或家屬在長庚官方網站完成。</p></>}
+        {index === 5 && <><dl className="recap"><div><dt>醫院</dt><dd>{data.hospital}</dd></div><div><dt>科別</dt><dd>{intent.department}</dd></div><div><dt>醫生</dt><dd>{slot?.doctor}</dd></div><div><dt>時間</dt><dd>{dateText}</dd></div></dl><div className="finalActions"><button type="button" className={`notifyButton ${notifySent ? "sent" : ""}`} onClick={() => void notifyFamily()}>自動通知家人 LINE</button>{notifyStatus && <p className="notifyStatus">{notifyStatus}</p>}<a className="lineButton" href={`https://line.me/R/share?text=${shareText}`} target="_blank" rel="noreferrer">改用手動分享 LINE</a>{validId && <button type="button" className="copyIdButton" onClick={() => void copyId()}>複製身分證字號</button>}{copyStatus && <p className="copyStatus">{copyStatus}</p>}<a className="officialButton" href={slot?.checkinUrl || data.sourceUrl} target="_blank" rel="noreferrer">前往長庚確認掛號</a></div><p className="safety">已經幫您篩好有號的時段、備好資料，最後一步請本人或家屬點上方按鈕，到長庚官方網站按下確認掛號。</p></>}
       </div>
       <div className="footerActions">{index > 0 && <button onClick={() => setIndex((current) => Math.max(current - 1,0))}>← 上一步</button>}<a href="https://register.cgmh.org.tw/" target="_blank" rel="noreferrer">我不確定，開啟長庚網站</a></div>
-      <p className="disclaimer">此為 Hackathon 示範，不會操作真實病患資料，也不會自動完成掛號。</p>
+      <p className="disclaimer">此為 Hackathon 示範。</p>
     </section>
   </main>;
 }
