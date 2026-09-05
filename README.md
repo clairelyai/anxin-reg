@@ -24,7 +24,7 @@
 3. 導入 **家屬接力** 機制，長輩用說的，最後確認交給家屬，打造無痛的數位就醫體驗。
 > **注意：本專案僅為 Hackathon 展示用，不登入真實醫院系統、不接觸真實病患資料，也不會自動送出任何真實掛號。**
 
-🌐 **線上 Live Demo：** [點此體驗安心掛號](https://anxin-registration-demo.modest-loon-8360.chatgpt.site)
+🌐 **線上 Live Demo：** [點此體驗安心掛號](https://site-creator-vinext-starter.anxin-reg.workers.dev/)
 
 
 ## 核心特色與已完成功能
