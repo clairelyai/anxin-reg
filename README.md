@@ -26,9 +26,9 @@
 
 🌐 **線上 Live Demo：** [點此體驗安心掛號](https://site-creator-vinext-starter.anxin-reg.workers.dev/)
 
-🎬 **Demo 影片** (點擊圖片即可觀看)
+🎬 **Demo 影片** (https://www.youtube.com/watch?v=O8FuekDZAgs)
 
-![安心掛號五步驟操作流程：從語音輸入、AI 整理、資料填寫，到確認掛號與分享給家人](docs/images/anxin-registration-demo-flow.jpg)(https://www.youtube.com/watch?v=O8FuekDZAgs)
+![安心掛號五步驟操作流程：從語音輸入、AI 整理、資料填寫，到確認掛號與分享給家人](docs/images/anxin-registration-demo-flow.jpg)
   
 
 ## 核心特色與已完成功能
