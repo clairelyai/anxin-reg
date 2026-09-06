@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-type Intent = { intent: "register"; department: string; date: string };
+type Intent = { intent: "register"; department: string; date: string; visitType?: string };
 type Slot = { value: string; date: string; displayDate: string; weekday: string; period: string; doctor: string; time: string; status?: string; checkinUrl?: string };
 type CgmhData = { hospital: string; department: string; slots: Slot[]; sourceUrl: string; sourceMode: "live" | "demo"; sourceReachable?: boolean };
 
@@ -49,10 +49,19 @@ function weekdayLabelFromIntentDate(date: string): string | null {
 }
 
 function localIntent(text: string): Intent {
-  const department = /眼|目睭/.test(text) ? "眼科" : /皮膚/.test(text) ? "皮膚科" : /耳|鼻|喉/.test(text) ? "耳鼻喉科" : "眼科";
+  const department = /眼|目睭|看不清楚|視力|流眼油|畏光/.test(text) ? "眼科"
+    : /皮膚|癢|疹子|濕疹|長痘/.test(text) ? "皮膚科"
+    : /耳|鼻|喉|喉嚨痛|鼻塞|耳鳴/.test(text) ? "耳鼻喉科"
+    : "眼科";
   const date = /三/.test(text) ? "next Wednesday" : /五/.test(text) ? "next Friday" : "next week";
-  return { intent: "register", department, date };
+  const visitType = /回診|複診|再來|上次/.test(text) ? "複診" : /初診|第一次|新病人/.test(text) ? "初診" : "未確定";
+  return { intent: "register", department, date, visitType };
 }
+
+// A static reminder to travel with the appointment once it's confirmed — the
+// "看診後提醒" step: what to bring and when to arrive, so the family member
+// receiving the LINE message has the full picture, not just the time/doctor.
+const VISIT_PREP_NOTE = "看診提醒：請於看診時間前 30 分鐘完成報到，記得攜帶健保卡與身分證正本；如需請假或改期，請依長庚官方規定辦理。";
 
 export default function Home() {
   const [index, setIndex] = useState(0);
@@ -68,6 +77,11 @@ export default function Home() {
   const [notifyStatus, setNotifyStatus] = useState("");
   const [notifySent, setNotifySent] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
+  const [misheardCount, setMisheardCount] = useState(0);
+  const [helpStatus, setHelpStatus] = useState("");
+  const [largeText, setLargeText] = useState(false);
+  const [medNote, setMedNote] = useState("");
+  const [followupWeeks, setFollowupWeeks] = useState<number | null>(null);
   const recorder = useRef<MediaRecorder | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const chunks = useRef<Blob[]>([]);
@@ -76,11 +90,22 @@ export default function Home() {
 
   useEffect(() => {
     fetch("/api/cgmh").then((r) => r.ok ? r.json() : Promise.reject()).then(setData).catch(() => {});
+    try {
+      if (localStorage.getItem("anxin-large-text") === "1") setLargeText(true);
+    } catch { /* private browsing or storage blocked — default size is fine */ }
     return () => {
       if (timer.current) clearTimeout(timer.current);
       stream.current?.getTracks().forEach((track) => track.stop());
     };
   }, []);
+
+  // "放大文字" preference — a body-level class so every screen (not just the
+  // current step) reflects it, and it's remembered next time this device
+  // opens the site.
+  useEffect(() => {
+    document.body.classList.toggle("textLarge", largeText);
+    try { localStorage.setItem("anxin-large-text", largeText ? "1" : "0"); } catch { /* ignore */ }
+  }, [largeText]);
 
   const requestedWeekday = weekdayLabelFromIntentDate(intent.date);
 
@@ -98,6 +123,19 @@ export default function Home() {
   const validId = /^[A-Z][0-9]{9}$/.test(idNumber);
   const masked = digits.length >= 5 ? `${letter}${digits.slice(0, 2)}${"•".repeat(Math.max(0, digits.length - 4))}${digits.slice(-2)}` : idNumber;
   const dateText = slot ? `${slot.displayDate} ${slot.weekday} ${slot.period}` : "下禮拜三 下午";
+
+  // Chronic-disease follow-up reminder — lightweight version: no background
+  // job actually fires later, we just compute the suggested follow-up date
+  // now (appointment date + N weeks) and fold it into the message that goes
+  // out today, so the family member has it in writing right away.
+  const followupDateText = useMemo(() => {
+    if (!followupWeeks || !slot?.date) return null;
+    const base = new Date(slot.date);
+    if (Number.isNaN(base.getTime())) return null;
+    base.setDate(base.getDate() + followupWeeks * 7);
+    return `${base.getMonth() + 1} 月 ${base.getDate()} 日前後`;
+  }, [followupWeeks, slot]);
+
   const shareText = useMemo(() => encodeURIComponent([
     "家人的掛號資料已準備好",
     data.hospital,
@@ -105,8 +143,26 @@ export default function Home() {
     dateText,
     `查看掛號資訊：${SITE_URL}`,
     ...(slot?.checkinUrl ? [`前往長庚確認掛號：${slot.checkinUrl}`] : []),
+    VISIT_PREP_NOTE,
+    ...(medNote.trim() ? [`用藥提醒：${medNote.trim()}`] : []),
+    ...(followupDateText ? [`回診提醒：建議約 ${followupDateText}（${followupWeeks} 週後）回診，請提前上網掛號`] : []),
     "（示範流程，尚未送出真實掛號）",
-  ].join("\n")), [data.hospital, dateText, intent.department, slot]);
+  ].join("\n")), [data.hospital, dateText, intent.department, slot, medNote, followupDateText, followupWeeks]);
+
+  // Reads a short line of text aloud — used so a long-sighted or
+  // low-vision elderly user can confirm what was understood, or hear the
+  // final recap, without having to read small text on screen. Silently
+  // does nothing on a browser without speech synthesis support.
+  const speak = (text: string) => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    try {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = "zh-TW";
+      utterance.rate = 0.95;
+      window.speechSynthesis.speak(utterance);
+    } catch { /* speech synthesis unavailable — the on-screen text still shows */ }
+  };
 
   // Copies the ID number to the device's own clipboard only when the user taps
   // this button — it never travels through a URL, LINE message, or our
@@ -136,6 +192,28 @@ export default function Home() {
     } catch {
       setNotifySent(false);
       setNotifyStatus("尚未設定自動通知，請用下方按鈕手動分享");
+    }
+  };
+
+  // Escalation path for when the long-press-to-talk step keeps mishearing
+  // the elderly user (misheardCount tracked via the "不對，我再說一次"
+  // button below): instead of looping forever, offer to send whatever we
+  // *did* hear straight to the family member's LINE so a person can help
+  // decide, rather than the elderly user getting stuck alone.
+  const askFamilyForHelp = async () => {
+    setHelpStatus("正在通知家人協助…");
+    const message = [
+      "長輩正在使用安心掛號，目前卡在說明需求這一步。",
+      `系統目前聽到的是：「${transcript || "（尚未聽清楚）"}」`,
+      "麻煩幫忙確認想掛的科別與時間，或直接打電話問一下。",
+      `查看畫面：${SITE_URL}`,
+    ].join("\n");
+    try {
+      const response = await fetch("/api/line/notify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: message }) });
+      if (!response.ok) throw new Error("notify_failed");
+      setHelpStatus("已通知家人協助 ✓");
+    } catch {
+      setHelpStatus("尚未設定自動通知，請直接打電話請家人協助");
     }
   };
 
@@ -218,7 +296,7 @@ export default function Home() {
   const subtitle = index === 0 ? "按住下面的麥克風，說出想看的科別與日期。" : index === 1 ? `「${transcript || "我要掛下禮拜三的眼科"}」` : index === 2 ? `${intent.department} · ${data.hospital}` : index === 3 ? dateText : index === 4 ? `${slot?.doctor} · ${dateText}` : "最後一步請家人幫您確認，或自行前往長庚網站。";
 
   return <main>
-    <header className="topbar"><div className="brand"><span className="brandMark" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none"><path d="M12 20.6s-7.6-4.6-10.2-9.2C.4 8.8 1.6 5.4 4.6 4.3c2.2-.8 4.5 0 5.9 1.8L12 8l1.5-1.9c1.4-1.8 3.7-2.6 5.9-1.8 3 1.1 4.2 4.5 2.8 7.1C21.6 16 12 20.6 12 20.6z" fill="currentColor"/><path d="M9 12h1.4l.9-1.6 1.4 3 .9-1.4H15" stroke="#fff" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg></span><span>安心掛號</span></div><span className="demoPill">完整 Demo</span></header>
+    <header className="topbar"><div className="brand"><span className="brandMark" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none"><path d="M12 20.6s-7.6-4.6-10.2-9.2C.4 8.8 1.6 5.4 4.6 4.3c2.2-.8 4.5 0 5.9 1.8L12 8l1.5-1.9c1.4-1.8 3.7-2.6 5.9-1.8 3 1.1 4.2 4.5 2.8 7.1C21.6 16 12 20.6 12 20.6z" fill="currentColor"/><path d="M9 12h1.4l.9-1.6 1.4 3 .9-1.4H15" stroke="#fff" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg></span><span>安心掛號<small className="brandTagline">高齡者健康照護數位助手</small></span></div><div className="topbarActions"><button type="button" className="textSizeButton" aria-pressed={largeText} onClick={() => setLargeText((value) => !value)}>{largeText ? "Aa 恢復預設字體" : "Aa 放大文字"}</button><span className="demoPill">完整 Demo</span></div></header>
     <section className="shell" aria-live="polite">
       <div className="progressText">{index === 5 ? "資料已整理" : `第 ${index + 1} 步，共 5 步`}</div>
       <div className="progress" aria-hidden="true">{[0,1,2,3,4].map((n) => <span key={n} className={n < Math.min(index + 1, 5) ? "done" : ""} />)}</div>
@@ -233,7 +311,7 @@ export default function Home() {
           <div className="heard">{voiceStatus || "「我要掛下禮拜三的眼科」"}</div>
         </div>}
 
-        {index === 1 && <><div className="intentCard"><div><span>要做什麼</span><strong>掛號</strong></div><div><span>科別</span><strong>{intent.department}</strong></div><div><span>日期</span><strong>{requestedWeekday ? `下${requestedWeekday}` : "下週"}</strong></div></div>{intent.department !== "眼科" && <p className="note">目前 Demo 僅串接台北長庚「眼科」的即時公開班表，其他科別會顯示為示範資料，僅供參考。</p>}<div className="choices"><button className="choice recommended" onClick={() => advance()}><span><strong>對，就是這樣</strong><small>查詢長庚公開掛號資訊</small></span></button><button className="choice" onClick={() => setIndex(0)}><span><strong>不對，我再說一次</strong></span></button></div></>}
+        {index === 1 && <><button type="button" className="ttsButton" onClick={() => speak(`您說的是掛${intent.department}${intent.visitType && intent.visitType !== "未確定" ? "，" + intent.visitType : ""}，時間是${requestedWeekday ? "下" + requestedWeekday : "下週"}。對的話請按對，就是這樣。`)}>🔊 唸給我聽</button><div className="intentCard"><div><span>要做什麼</span><strong>掛號</strong></div><div><span>科別</span><strong>{intent.department}</strong></div>{intent.visitType && intent.visitType !== "未確定" && <div><span>類型</span><strong>{intent.visitType}</strong></div>}<div><span>日期</span><strong>{requestedWeekday ? `下${requestedWeekday}` : "下週"}</strong></div></div><p className="note">科別是根據您說的內容判斷的建議，不是醫療診斷；{intent.department !== "眼科" ? "目前 Demo 僅串接台北長庚「眼科」的即時公開班表，其他科別會顯示為示範資料，僅供參考。" : "如果不確定，可以請家人再次確認。"}</p><div className="choices"><button className="choice recommended" onClick={() => { setMisheardCount(0); advance(); }}><span><strong>對，就是這樣</strong><small>查詢長庚公開掛號資訊</small></span></button><button className="choice" onClick={() => { setMisheardCount((n) => n + 1); setIndex(0); }}><span><strong>不對，我再說一次</strong></span></button></div>{misheardCount >= 2 && <div className="helpBlock"><button type="button" className="helpButton" onClick={() => void askFamilyForHelp()}>改請家人協助</button>{helpStatus && <p className="notifyStatus">{helpStatus}</p>}</div>}</>}
 
         {index === 2 && <><div className="sourceLine"><span className={data.sourceMode === "live" ? "liveDot" : "demoDot"} />{data.sourceMode === "live" ? `${data.hospital} · 眼科即時公開班表（僅供參考）` : "長庚公開資料層 · 抓取失敗，顯示示範資料"}<a href={data.sourceUrl} target="_blank" rel="noreferrer">查看來源</a></div><div className="choices">{data.slots.map((item, n) => <button key={item.value} className={n === selected ? "choice recommended" : "choice"} onClick={() => { setSelected(n); advance(); }}><span><strong>{item.weekday}　{item.period}</strong><small>{item.displayDate}</small></span>{item.status && <em>{item.status}</em>}</button>)}</div></>}
 
@@ -241,7 +319,7 @@ export default function Home() {
 
         {index === 4 && <div className="idBlock"><div className="idDisplay">{masked || "請選字母並輸入數字"}</div><p>1 個英文字母 + 9 個數字</p><p className="privacy">這組號碼只留在您的裝置上，不會上傳。</p><label className="letterLabel">第一碼英文字母<select value={letter} onChange={(e) => setLetter(e.target.value)}><option value="">請選擇</option>{letters.map((item) => <option key={item}>{item}</option>)}</select></label><div className="keypad">{["1","2","3","4","5","6","7","8","9","0","刪除"].map((key) => <button key={key} onClick={() => setDigits((value) => key === "刪除" ? value.slice(0,-1) : `${value}${key}`.slice(0,9))}>{key}</button>)}</div><button className="primary" disabled={!validId} onClick={() => advance()}>好了，下一步</button></div>}
 
-        {index === 5 && <><dl className="recap"><div><dt>醫院</dt><dd>{data.hospital}</dd></div><div><dt>科別</dt><dd>{intent.department}</dd></div><div><dt>醫生</dt><dd>{slot?.doctor}</dd></div><div><dt>時間</dt><dd>{dateText}</dd></div></dl><div className="finalActions"><button type="button" className={`notifyButton ${notifySent ? "sent" : ""}`} onClick={() => void notifyFamily()}>自動通知家人 LINE</button>{notifyStatus && <p className="notifyStatus">{notifyStatus}</p>}<a className="lineButton" href={`https://line.me/R/share?text=${shareText}`} target="_blank" rel="noreferrer">改用手動分享 LINE</a>{validId && <button type="button" className="copyIdButton" onClick={() => void copyId()}>複製身分證字號</button>}{copyStatus && <p className="copyStatus">{copyStatus}</p>}<a className="officialButton" href={slot?.checkinUrl || data.sourceUrl} target="_blank" rel="noreferrer">前往長庚確認掛號</a></div><p className="safety">已經幫您篩好有號的時段、備好資料，最後一步請本人或家屬點上方按鈕，到長庚官方網站按下確認掛號。</p></>}
+        {index === 5 && <><button type="button" className="ttsButton" onClick={() => speak(`已經幫您安排好了。${data.hospital}，${intent.department}，${slot?.doctor}，時間是${dateText}。${VISIT_PREP_NOTE}`)}>🔊 唸給我聽</button><dl className="recap"><div><dt>醫院</dt><dd>{data.hospital}</dd></div><div><dt>科別</dt><dd>{intent.department}</dd></div>{intent.visitType && intent.visitType !== "未確定" && <div><dt>類型</dt><dd>{intent.visitType}</dd></div>}<div><dt>醫生</dt><dd>{slot?.doctor}</dd></div><div><dt>時間</dt><dd>{dateText}</dd></div></dl><p className="note">{VISIT_PREP_NOTE}</p><div className="reminderBlock"><label className="reminderLabel">用藥提醒（選填）<input type="text" value={medNote} onChange={(e) => setMedNote(e.target.value)} placeholder="例如：早晚各一次，白色血壓藥" /></label><div className="reminderLabel">回診提醒（選填）<div className="weekChoices">{[4, 8, 12].map((weeks) => <button key={weeks} type="button" className={followupWeeks === weeks ? "weekChoice active" : "weekChoice"} onClick={() => setFollowupWeeks((current) => current === weeks ? null : weeks)}>{weeks} 週後</button>)}</div></div>{followupDateText && <p className="notifyStatus">將提醒約 {followupDateText}（{followupWeeks} 週後）應回診</p>}<p className="reminderHint">以上提醒會一起放進下面傳給家人的 LINE 訊息裡；目前不會在時間到了另外自動跳出通知，仍需要家人幫忙留意日期。</p></div><div className="finalActions"><button type="button" className={`notifyButton ${notifySent ? "sent" : ""}`} onClick={() => void notifyFamily()}>自動通知家人 LINE</button>{notifyStatus && <p className="notifyStatus">{notifyStatus}</p>}<a className="lineButton" href={`https://line.me/R/share?text=${shareText}`} target="_blank" rel="noreferrer">改用手動分享 LINE</a>{validId && <button type="button" className="copyIdButton" onClick={() => void copyId()}>複製身分證字號</button>}{copyStatus && <p className="copyStatus">{copyStatus}</p>}<a className="officialButton" href={slot?.checkinUrl || data.sourceUrl} target="_blank" rel="noreferrer">前往長庚確認掛號</a></div><p className="safety">已經幫您篩好有號的時段、備好資料，最後一步請本人或家屬點上方按鈕，到長庚官方網站按下確認掛號。</p></>}
       </div>
       <div className="footerActions">{index > 0 && <button onClick={() => setIndex((current) => Math.max(current - 1,0))}>← 上一步</button>}<a href="https://register.cgmh.org.tw/" target="_blank" rel="noreferrer">我不確定，開啟長庚網站</a></div>
       <p className="disclaimer">此為 Hackathon 示範。</p>
