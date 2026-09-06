@@ -26,8 +26,10 @@
 
 🌐 **線上 Live Demo：** [點此體驗安心掛號](https://site-creator-vinext-starter.anxin-reg.workers.dev/)
 
-![安心掛號五步驟操作流程：從語音輸入、AI 整理、資料填寫，到確認掛號與分享給家人](docs/images/anxin-registration-demo-flow.jpg)
+🎬 **Demo 影片** (點擊圖片即可觀看)
 
+![安心掛號五步驟操作流程：從語音輸入、AI 整理、資料填寫，到確認掛號與分享給家人](docs/images/anxin-registration-demo-flow.jpg)(https://www.youtube.com/watch?v=O8FuekDZAgs)
+  
 
 ## 核心特色與已完成功能
 **長輩友善語音介面：** 按住說話的錄音介面，自動串接 Whisper 語音轉文字（未設定金鑰時會自動降級使用瀏覽器內建語音辨識）。
