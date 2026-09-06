@@ -82,6 +82,17 @@ export default function Home() {
   const [largeText, setLargeText] = useState(false);
   const [medNote, setMedNote] = useState("");
   const [followupWeeks, setFollowupWeeks] = useState<number | null>(null);
+  // "安心助理" home screen + two lightweight, scripted side-flows that sit
+  // alongside the voice registration flow: 看不懂這個 (photo/document
+  // understanding) and 請家人幫忙 (direct escalation). All three are gated by
+  // `mode` so the existing 0-5 step registration flow below is completely
+  // untouched when mode !== "register".
+  const [mode, setMode] = useState<"home" | "register" | "photo" | "family">("home");
+  const [photoStep, setPhotoStep] = useState<"upload" | "analyzing" | "result">("upload");
+  const [photoAdded, setPhotoAdded] = useState(false);
+  const [photoUnsure, setPhotoUnsure] = useState(false);
+  const [familyContext, setFamilyContext] = useState<"general" | "photo">("general");
+  const [familyStatus, setFamilyStatus] = useState<"idle" | "sending" | "sent" | "failed">("idle");
   const recorder = useRef<MediaRecorder | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const chunks = useRef<Blob[]>([]);
@@ -123,6 +134,14 @@ export default function Home() {
   const validId = /^[A-Z][0-9]{9}$/.test(idNumber);
   const masked = digits.length >= 5 ? `${letter}${digits.slice(0, 2)}${"•".repeat(Math.max(0, digits.length - 4))}${digits.slice(-2)}` : idNumber;
   const dateText = slot ? `${slot.displayDate} ${slot.weekday} ${slot.period}` : "下禮拜三 下午";
+
+  // Scripted "document understanding" result for the 看不懂這個 flow — no real
+  // image AI call, just a realistic fixed example (a clinic follow-up notice)
+  // computed with a real near-future date so it doesn't look stale in a demo.
+  const photoDoc = useMemo(() => {
+    const d = nextWeekday(5);
+    return { date: `${d.getMonth() + 1} 月 ${d.getDate()} 日（五）`, time: "上午 10:30", place: "台北 XX 醫院" };
+  }, []);
 
   // Chronic-disease follow-up reminder — lightweight version: no background
   // job actually fires later, we just compute the suggested follow-up date
@@ -217,6 +236,44 @@ export default function Home() {
     }
   };
 
+  // Sends a message to the family LINE recipient(s) from the two home-level
+  // flows (direct "請家人幫忙" and the "我還是不懂" escalation inside 看不懂這個).
+  // Kept separate from askFamilyForHelp below (which is specific to the
+  // registration flow's mishear escalation) so neither message's wording has
+  // to compromise for the other's context.
+  const sendFamilyHelp = async () => {
+    setFamilyStatus("sending");
+    const message = familyContext === "photo"
+      ? [
+          "長輩用「安心助理」拍了一張看不懂的通知，想請您確認。",
+          `AI 判斷內容：回診 ${photoDoc.date} ${photoDoc.time}，${photoDoc.place}`,
+          "如果內容看起來不對、或需要付款，請直接確認或回電，不要讓長輩自己處理。",
+          `查看畫面：${SITE_URL}`,
+        ].join("\n")
+      : [
+          "長輩正在使用安心助理，AI 不確定能不能安全處理，需要您協助確認一下。",
+          transcript ? `目前記錄到的內容：「${transcript}」` : "尚未取得詳細內容，麻煩直接聯絡確認。",
+          `查看畫面：${SITE_URL}`,
+        ].join("\n");
+    try {
+      const response = await fetch("/api/line/notify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: message }) });
+      if (!response.ok) throw new Error("notify_failed");
+      setFamilyStatus("sent");
+    } catch {
+      setFamilyStatus("failed");
+    }
+  };
+
+  // Resets every side-flow's local state and returns to the home screen —
+  // used by every "← 回首頁" link so re-entering a flow always starts clean.
+  const goHome = () => {
+    setMode("home");
+    setPhotoStep("upload");
+    setPhotoAdded(false);
+    setPhotoUnsure(false);
+    setFamilyStatus("idle");
+  };
+
   const advance = (next = index + 1, delay = 550) => {
     setBusy(true);
     timer.current = setTimeout(() => { setIndex(Math.min(next, 5)); setBusy(false); }, delay);
@@ -231,6 +288,7 @@ export default function Home() {
       setIntent(result.intent);
     } catch { setIntent(localIntent(text)); }
     setVoiceStatus("");
+    setMode("register");
     advance(1, 250);
   };
 
@@ -296,9 +354,74 @@ export default function Home() {
   const subtitle = index === 0 ? "按住下面的麥克風，說出想看的科別與日期。" : index === 1 ? `「${transcript || "我要掛下禮拜三的眼科"}」` : index === 2 ? `${intent.department} · ${data.hospital}` : index === 3 ? dateText : index === 4 ? `${slot?.doctor} · ${dateText}` : "最後一步請家人幫您確認，或自行前往長庚網站。";
 
   return <main>
-    <header className="topbar"><div className="brand"><span className="brandMark" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none"><path d="M12 20.6s-7.6-4.6-10.2-9.2C.4 8.8 1.6 5.4 4.6 4.3c2.2-.8 4.5 0 5.9 1.8L12 8l1.5-1.9c1.4-1.8 3.7-2.6 5.9-1.8 3 1.1 4.2 4.5 2.8 7.1C21.6 16 12 20.6 12 20.6z" fill="currentColor"/><path d="M9 12h1.4l.9-1.6 1.4 3 .9-1.4H15" stroke="#fff" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg></span><span>安心掛號<small className="brandTagline">高齡者健康照護數位助手</small></span></div><div className="topbarActions"><button type="button" className="textSizeButton" aria-pressed={largeText} onClick={() => setLargeText((value) => !value)}>{largeText ? "Aa 恢復預設字體" : "Aa 放大文字"}</button><span className="demoPill">完整 Demo</span></div></header>
+    <header className="topbar"><div className="brand"><span className="brandMark" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none"><path d="M12 20.6s-7.6-4.6-10.2-9.2C.4 8.8 1.6 5.4 4.6 4.3c2.2-.8 4.5 0 5.9 1.8L12 8l1.5-1.9c1.4-1.8 3.7-2.6 5.9-1.8 3 1.1 4.2 4.5 2.8 7.1C21.6 16 12 20.6 12 20.6z" fill="currentColor"/><path d="M9 12h1.4l.9-1.6 1.4 3 .9-1.4H15" stroke="#fff" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg></span><span>安心掛號<small className="brandTagline">高齡者健康照護數位助手</small></span></div><div className="topbarActions"><button type="button" className="textSizeButton" aria-pressed={largeText} onClick={() => setLargeText((value) => !value)}>{largeText ? "Aa 恢復預設字體" : "Aa 放大文字"}</button></div></header>
     <section className="shell" aria-live="polite">
-      <div className="progressText">{index === 5 ? "資料已整理" : `第 ${index + 1} 步，共 5 步`}</div>
+      {mode === "home" && <div className="card">
+        <p className="kicker">安心助理</p>
+        <h1>今天需要什麼幫忙？</h1>
+        <p className="subtitle">說出你的需求，AI 幫你處理；真的不確定時，家人會在。</p>
+        <div className="voiceBlock">
+          <button className={`mic ${recording ? "active" : ""}`} onPointerDown={() => void startVoice()} onPointerUp={stopVoice} onPointerLeave={stopVoice} onKeyDown={(e) => { if ((e.key === " " || e.key === "Enter") && !e.repeat) void startVoice(); }} onKeyUp={(e) => { if (e.key === " " || e.key === "Enter") stopVoice(); }} aria-label="按住說話">
+            <span className="micEmoji" aria-hidden="true">🎤</span><strong>{recording ? "放開送出" : "按住說話"}</strong>
+          </button>
+          <div className="heard">{voiceStatus || "「我要改下禮拜三的眼科掛號」"}</div>
+        </div>
+        <div className="homeEntries">
+          <button type="button" className="homeEntry" onClick={() => { setIndex(0); setMode("register"); }}><span className="homeEntryIcon" aria-hidden="true">🏥</span><span><strong>醫院掛號</strong><small>掛號、查詢、更改時間</small></span></button>
+          <button type="button" className="homeEntry" onClick={() => { setPhotoStep("upload"); setPhotoAdded(false); setPhotoUnsure(false); setMode("photo"); }}><span className="homeEntryIcon" aria-hidden="true">📷</span><span><strong>看不懂這個</strong><small>拍照讓我幫你看看</small></span></button>
+          <button type="button" className="homeEntry" onClick={() => { setFamilyContext("general"); setFamilyStatus("idle"); setMode("family"); }}><span className="homeEntryIcon" aria-hidden="true">👨‍👩‍👧</span><span><strong>請家人幫忙</strong><small>我不確定時，通知家人</small></span></button>
+        </div>
+      </div>}
+
+      {mode === "photo" && <div className="card">
+        <p className="kicker">看不懂這個</p>
+        <h1>{photoStep === "result" ? "這張通知在說" : "文件理解"}</h1>
+        <p className="subtitle">{photoStep === "result" ? "AI 幫您整理重點如下，僅供參考。" : "把相機對準你看不懂的東西，或從照片選擇。"}</p>
+        {photoStep !== "result" && <div className="voiceBlock">
+          <div className="photoIcon" aria-hidden="true">📷</div>
+          <div className="choices">
+            <button type="button" className="choice recommended" disabled={photoStep === "analyzing"} onClick={() => { setPhotoStep("analyzing"); setTimeout(() => setPhotoStep("result"), 900); }}><span><strong>開啟相機</strong></span></button>
+            <button type="button" className="choice" disabled={photoStep === "analyzing"} onClick={() => { setPhotoStep("analyzing"); setTimeout(() => setPhotoStep("result"), 900); }}><span><strong>從照片選擇</strong></span></button>
+          </div>
+          {photoStep === "analyzing" && <div className="heard">正在幫您看這張圖片…</div>}
+        </div>}
+        {photoStep === "result" && <>
+          <div className="intentCard">
+            <div><span>📅 回診</span><strong>{photoDoc.date}</strong></div>
+            <div><span>🕙 時間</span><strong>{photoDoc.time}</strong></div>
+            <div><span>🏥 地點</span><strong>{photoDoc.place}</strong></div>
+          </div>
+          <div className="choices">
+            <button type="button" className="choice recommended" onClick={() => setPhotoAdded(true)}><span><strong>加入提醒</strong></span></button>
+            <button type="button" className="choice" onClick={() => setPhotoUnsure(true)}><span><strong>我還是不懂</strong></span></button>
+          </div>
+          {photoAdded && <p className="notifyStatus">已加入提醒 ✓</p>}
+          {photoUnsure && <div className="helpBlock cautionBlock"><p className="note">⚠️ 我不確定這則訊息是否安全，建議請家人再確認一次。</p><button type="button" className="helpButton" onClick={() => { setFamilyContext("photo"); setFamilyStatus("idle"); setMode("family"); }}>請家人看看</button></div>}
+        </>}
+        <div className="footerActions"><button type="button" onClick={goHome}>← 回首頁</button></div>
+      </div>}
+
+      {mode === "family" && <div className="card">
+        <p className="kicker">請家人幫忙</p>
+        <h1>{familyStatus === "sent" ? "已通知家人" : "這件事需要確認"}</h1>
+        <p className="subtitle">
+          {familyStatus === "sent" ? "我已經把問題整理好了，不用重新解釋。"
+            : familyStatus === "failed" ? "尚未設定自動通知，請直接打電話請家人協助。"
+            : familyContext === "photo" ? "這張通知的內容不確定是否安全，我先不幫您處理，可以請家人一起看看。"
+            : "真的不確定的時候，我不會自己硬猜，可以請家人一起看看。"}
+        </p>
+        {(familyStatus === "idle" || familyStatus === "sending") && <button type="button" className="helpButton" disabled={familyStatus === "sending"} onClick={() => void sendFamilyHelp()}>👨‍👩‍👧 請家人幫忙</button>}
+        {familyStatus === "sent" && <div className="familyPreview">
+          <p className="reminderHint">家人端會看到的訊息：</p>
+          <div className="intentCard">
+            <div><span>狀態</span><strong>{familyContext === "photo" ? "看不懂的通知" : "需要協助"}</strong></div>
+            <div><span>內容摘要</span><strong>{familyContext === "photo" ? `回診 ${photoDoc.date} ${photoDoc.time}` : (transcript || "尚未聽清楚的需求")}</strong></div>
+          </div>
+        </div>}
+        <div className="footerActions"><button type="button" onClick={goHome}>← 回首頁</button></div>
+      </div>}
+
+      {mode === "register" && <><div className="progressText">{index === 5 ? "資料已整理" : `${index + 1} / 5`}</div>
       <div className="progress" aria-hidden="true">{[0,1,2,3,4].map((n) => <span key={n} className={n < Math.min(index + 1, 5) ? "done" : ""} />)}</div>
       <div className="card">
         {busy && <div className="loading"><span className="spinner" /><strong>正在幫您查詢</strong><small>不用再按，等一下就好</small></div>}
@@ -321,7 +444,8 @@ export default function Home() {
 
         {index === 5 && <><button type="button" className="ttsButton" onClick={() => speak(`已經幫您安排好了。${data.hospital}，${intent.department}，${slot?.doctor}，時間是${dateText}。${VISIT_PREP_NOTE}`)}>🔊 唸給我聽</button><dl className="recap"><div><dt>醫院</dt><dd>{data.hospital}</dd></div><div><dt>科別</dt><dd>{intent.department}</dd></div>{intent.visitType && intent.visitType !== "未確定" && <div><dt>類型</dt><dd>{intent.visitType}</dd></div>}<div><dt>醫生</dt><dd>{slot?.doctor}</dd></div><div><dt>時間</dt><dd>{dateText}</dd></div></dl><p className="note">{VISIT_PREP_NOTE}</p><div className="reminderBlock"><label className="reminderLabel">用藥提醒（選填）<input type="text" value={medNote} onChange={(e) => setMedNote(e.target.value)} placeholder="例如：早晚各一次，白色血壓藥" /></label><div className="reminderLabel">回診提醒（選填）<div className="weekChoices">{[4, 8, 12].map((weeks) => <button key={weeks} type="button" className={followupWeeks === weeks ? "weekChoice active" : "weekChoice"} onClick={() => setFollowupWeeks((current) => current === weeks ? null : weeks)}>{weeks} 週後</button>)}</div></div>{followupDateText && <p className="notifyStatus">將提醒約 {followupDateText}（{followupWeeks} 週後）應回診</p>}<p className="reminderHint">以上提醒會一起放進下面傳給家人的 LINE 訊息裡；目前不會在時間到了另外自動跳出通知，仍需要家人幫忙留意日期。</p></div><div className="finalActions"><button type="button" className={`notifyButton ${notifySent ? "sent" : ""}`} onClick={() => void notifyFamily()}>自動通知家人 LINE</button>{notifyStatus && <p className="notifyStatus">{notifyStatus}</p>}<a className="lineButton" href={`https://line.me/R/share?text=${shareText}`} target="_blank" rel="noreferrer">改用手動分享 LINE</a>{validId && <button type="button" className="copyIdButton" onClick={() => void copyId()}>複製身分證字號</button>}{copyStatus && <p className="copyStatus">{copyStatus}</p>}<a className="officialButton" href={slot?.checkinUrl || data.sourceUrl} target="_blank" rel="noreferrer">前往長庚確認掛號</a></div><p className="safety">已經幫您篩好有號的時段、備好資料，最後一步請本人或家屬點上方按鈕，到長庚官方網站按下確認掛號。</p></>}
       </div>
-      <div className="footerActions">{index > 0 && <button onClick={() => setIndex((current) => Math.max(current - 1,0))}>← 上一步</button>}<a href="https://register.cgmh.org.tw/" target="_blank" rel="noreferrer">我不確定，開啟長庚網站</a></div>
+      <div className="footerActions">{index > 0 ? <button onClick={() => setIndex((current) => Math.max(current - 1,0))}>← 上一步</button> : <button onClick={goHome}>← 回首頁</button>}<a href="https://register.cgmh.org.tw/" target="_blank" rel="noreferrer">我不確定，開啟長庚網站</a></div>
+      </>}
       <p className="disclaimer">此為 Hackathon 示範。</p>
     </section>
   </main>;
