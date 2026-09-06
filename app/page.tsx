@@ -32,6 +32,22 @@ function fallbackData(): CgmhData {
   };
 }
 
+const WEEKDAY_LABELS: Record<string, string> = {
+  monday: "禮拜一", tuesday: "禮拜二", wednesday: "禮拜三", thursday: "禮拜四",
+  friday: "禮拜五", saturday: "禮拜六", sunday: "禮拜日",
+};
+
+// intent.date comes back as a short English phrase like "next Friday" (from
+// the AI step) or "next Wednesday" (from the local fallback) — pull the
+// weekday name out of it so we can (a) show a Chinese label matching what
+// the user actually asked for instead of a hardcoded day, and (b)
+// auto-highlight the matching slot below instead of always defaulting to
+// the first one.
+function weekdayLabelFromIntentDate(date: string): string | null {
+  const match = date.toLowerCase().match(/monday|tuesday|wednesday|thursday|friday|saturday|sunday/);
+  return match ? WEEKDAY_LABELS[match[0]] : null;
+}
+
 function localIntent(text: string): Intent {
   const department = /眼|目睭/.test(text) ? "眼科" : /皮膚/.test(text) ? "皮膚科" : /耳|鼻|喉/.test(text) ? "耳鼻喉科" : "眼科";
   const date = /三/.test(text) ? "next Wednesday" : /五/.test(text) ? "next Friday" : "next week";
@@ -65,6 +81,17 @@ export default function Home() {
       stream.current?.getTracks().forEach((track) => track.stop());
     };
   }, []);
+
+  const requestedWeekday = weekdayLabelFromIntentDate(intent.date);
+
+  // Once we know which weekday the user actually asked for (from voice) and
+  // the real schedule has loaded, jump the selection to the first slot on
+  // that weekday instead of always leaving it on the first slot in the list.
+  useEffect(() => {
+    if (!requestedWeekday) return;
+    const match = data.slots.findIndex((item) => item.weekday === requestedWeekday);
+    if (match >= 0) setSelected(match);
+  }, [data, requestedWeekday]);
 
   const slot = data.slots[selected] || data.slots[0];
   const idNumber = `${letter}${digits}`;
@@ -206,7 +233,7 @@ export default function Home() {
           <div className="heard">{voiceStatus || "「我要掛下禮拜三的眼科」"}</div>
         </div>}
 
-        {index === 1 && <><div className="intentCard"><div><span>要做什麼</span><strong>掛號</strong></div><div><span>科別</span><strong>{intent.department}</strong></div><div><span>日期</span><strong>下禮拜三</strong></div></div><div className="choices"><button className="choice recommended" onClick={() => advance()}><span><strong>對，就是這樣</strong><small>查詢長庚公開掛號資訊</small></span></button><button className="choice" onClick={() => setIndex(0)}><span><strong>不對，我再說一次</strong></span></button></div></>}
+        {index === 1 && <><div className="intentCard"><div><span>要做什麼</span><strong>掛號</strong></div><div><span>科別</span><strong>{intent.department}</strong></div><div><span>日期</span><strong>{requestedWeekday ? `下${requestedWeekday}` : "下週"}</strong></div></div>{intent.department !== "眼科" && <p className="note">目前 Demo 僅串接台北長庚「眼科」的即時公開班表，其他科別會顯示為示範資料，僅供參考。</p>}<div className="choices"><button className="choice recommended" onClick={() => advance()}><span><strong>對，就是這樣</strong><small>查詢長庚公開掛號資訊</small></span></button><button className="choice" onClick={() => setIndex(0)}><span><strong>不對，我再說一次</strong></span></button></div></>}
 
         {index === 2 && <><div className="sourceLine"><span className={data.sourceMode === "live" ? "liveDot" : "demoDot"} />{data.sourceMode === "live" ? `${data.hospital} · 眼科即時公開班表（僅供參考）` : "長庚公開資料層 · 抓取失敗，顯示示範資料"}<a href={data.sourceUrl} target="_blank" rel="noreferrer">查看來源</a></div><div className="choices">{data.slots.map((item, n) => <button key={item.value} className={n === selected ? "choice recommended" : "choice"} onClick={() => { setSelected(n); advance(); }}><span><strong>{item.weekday}　{item.period}</strong><small>{item.displayDate}</small></span>{item.status && <em>{item.status}</em>}</button>)}</div></>}
 
